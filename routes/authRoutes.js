@@ -1,21 +1,21 @@
-const express = require('express');
+const express = require("express");
 
 function createAuthRouter(authController) {
-    const router = express.Router();
+  const router = express.Router();
 
-    // Create initial developer account (public - only works when no users exist)
-    router.post('/init-developer', authController.createInitialDeveloper);
+  // Create initial developer account (public - only works when no users exist)
+  router.post("/init-developer", authController.createInitialDeveloper);
 
-    // Signup route (protected - requires authentication)
-    router.post('/signup', authController.signup);
+  // Signup route (protected - requires authentication)
+  router.post("/signup", authController.signup);
 
-    // Login route
-    router.post('/login', authController.login);
+  // Login route
+  router.post("/login", authController.login);
 
-    // Logout route
-    router.post('/logout', authController.logout);
+  // Logout route
+  router.post("/logout", authController.logout);
 
-    return router;
+  return router;
 }
 
 module.exports = createAuthRouter;
