@@ -553,19 +553,19 @@ class JobSeeker {
     // Add this new method to the JobSeeker class in models/jobseeker.js
 
     // Add a note to a job seeker and automatically update last contact date
-    async addNoteAndUpdateContact(jobSeekerId, text, userId) {
+    async addNoteAndUpdateContact(jobSeekerId, text, userId, noteType = 'General Note') {
         const client = await this.pool.connect();
         try {
             await client.query('BEGIN');
 
-            // Insert the note
+            // Insert the note with note_type
             const noteQuery = `
-                INSERT INTO job_seeker_notes (job_seeker_id, text, created_by)
-                VALUES ($1, $2, $3)
-                RETURNING id, text, created_at
+                INSERT INTO job_seeker_notes (job_seeker_id, text, note_type, created_by)
+                VALUES ($1, $2, $3, $4)
+                RETURNING id, text, note_type, created_at
             `;
 
-            const noteResult = await client.query(noteQuery, [jobSeekerId, text, userId]);
+            const noteResult = await client.query(noteQuery, [jobSeekerId, text, noteType, userId]);
 
             // Update last contact date to current date
             const updateContactQuery = `
@@ -593,6 +593,7 @@ class JobSeeker {
                 JSON.stringify({
                     noteId: noteResult.rows[0].id,
                     text,
+                    noteType: noteType,
                     lastContactDateUpdated: true
                 }),
                 userId

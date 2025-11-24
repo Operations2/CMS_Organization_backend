@@ -268,7 +268,7 @@ class JobSeekerController {
   async addNote(req, res) {
     try {
       const { id } = req.params;
-      const { text } = req.body;
+      const { text, note_type } = req.body;
 
       if (!text || !text.trim()) {
         return res.status(400).json({
@@ -286,7 +286,8 @@ class JobSeekerController {
       const note = await this.jobSeekerModel.addNoteAndUpdateContact(
         id,
         text,
-        userId
+        userId,
+        note_type || 'General Note'
       );
 
       return res.status(201).json({

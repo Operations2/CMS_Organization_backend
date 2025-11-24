@@ -5,6 +5,7 @@ class UserController {
         this.userModel = new User(pool);
         this.getActiveUsers = this.getActiveUsers.bind(this);
         this.createUser = this.createUser.bind(this);
+        this.getAllUsers = this.getAllUsers.bind(this);
     }
 
     // Create new user

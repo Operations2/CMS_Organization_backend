@@ -160,8 +160,9 @@ class AuthController {
       });
     }
 
-    // Role-based creation restrictions
+    // Role-based creation restrictions (only if req.user exists)
     if (
+      req.user &&
       req.user.role === "admin" &&
       (userType === "developer" || userType === "owner")
     ) {
@@ -216,6 +217,8 @@ class AuthController {
       });
     } catch (error) {
       console.error("Error creating user:", error);
+      console.error("Error stack:", error.stack);
+      console.error("Request body:", req.body);
 
       if (error.message === "User with this email already exists") {
         return res.status(409).json({

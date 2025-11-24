@@ -73,6 +73,14 @@ class User {
             // Begin transaction
             await client.query('BEGIN');
 
+            // Convert empty strings to null for optional fields
+            const cleanPhone = phone && String(phone).trim() !== '' ? String(phone).trim() : null;
+            const cleanPhone2 = phone2 && String(phone2).trim() !== '' ? String(phone2).trim() : null;
+            const cleanTitle = title && String(title).trim() !== '' ? String(title).trim() : null;
+            const cleanIdNumber = idNumber && String(idNumber).trim() !== '' ? String(idNumber).trim() : null;
+            const cleanOfficeId = officeId && String(officeId).trim() !== '' ? String(officeId).trim() : null;
+            const cleanTeamId = teamId && String(teamId).trim() !== '' ? String(teamId).trim() : null;
+
             // Insert user into database
             const insertUserQuery = `
         INSERT INTO users (name, email, password, role, office_id, team_id, phone, phone2, title, id_number, is_admin, token, status, created_at, updated_at)
@@ -80,15 +88,35 @@ class User {
         RETURNING id, name, email, role, office_id, team_id, phone, phone2, title, id_number, is_admin, token, status, created_at
       `;
 
-            const values = [name, email, hashedPassword, userType, officeId, teamId, phone, phone2, title, idNumber, isAdmin || false, token, true];
+            const values = [
+                name, 
+                email, 
+                hashedPassword, 
+                userType, 
+                cleanOfficeId, 
+                cleanTeamId, 
+                cleanPhone, 
+                cleanPhone2, 
+                cleanTitle, 
+                cleanIdNumber, 
+                isAdmin || false, 
+                token, 
+                true
+            ];
             const result = await client.query(insertUserQuery, values);
 
             // If user is being added to a team, also add them to team_members table
-            if (teamId) {
-                await client.query(
-                    'INSERT INTO team_members (team_id, user_id, role, added_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT DO NOTHING',
-                    [teamId, result.rows[0].id, 'member']
-                );
+            if (cleanTeamId) {
+                try {
+                    await client.query(
+                        'INSERT INTO team_members (team_id, user_id, role, added_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT DO NOTHING',
+                        [cleanTeamId, result.rows[0].id, 'member']
+                    );
+                } catch (teamMemberError) {
+                    console.error('Error adding user to team_members:', teamMemberError);
+                    // Don't fail the entire transaction if team_members insert fails
+                    // This could happen if the table doesn't exist or has constraints
+                }
             }
 
             // Commit transaction
@@ -112,7 +140,12 @@ class User {
             };
         } catch (error) {
             // Rollback transaction in case of error
-            await client.query('ROLLBACK');
+            try {
+                await client.query('ROLLBACK');
+            } catch (rollbackError) {
+                console.error('Error during rollback:', rollbackError);
+            }
+            console.error('Error creating user:', error);
             throw error;
         } finally {
             client.release();
