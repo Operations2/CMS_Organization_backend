@@ -100,7 +100,7 @@ class Job {
             owner,
             dateAdded,
             userId,
-            customFields = {}
+            customFields 
         } = jobData;
 
         console.log("Job model - create function input:", JSON.stringify(jobData, null, 2));
@@ -140,7 +140,7 @@ class Job {
                         customFieldsJson = customFields;
                     } catch (e) {
                         console.log("Invalid JSON string in customFields, using empty object");
-                        console.log("Invalid JSON string in customFields, using empty object");
+                        
                         customFieldsJson = '{}';
                     }
                 } else if (typeof customFields === 'object') {
