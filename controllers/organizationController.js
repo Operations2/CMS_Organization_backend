@@ -112,6 +112,7 @@ class OrganizationController {
             console.log("custom_fields being passed:", JSON.stringify(modelData.custom_fields, null, 2));
             console.log("custom_fields type:", typeof modelData.custom_fields);
             console.log("custom_fields keys count:", modelData.custom_fields ? Object.keys(modelData.custom_fields).length : 0);
+            
             console.log("=== END PASSING TO MODEL ===");
             
             const organization = await this.organizationModel.create(modelData);
