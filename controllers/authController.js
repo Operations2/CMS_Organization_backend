@@ -319,6 +319,15 @@ class AuthController {
         });
       }
 
+      // Check if password exists
+      if (!user.password) {
+        console.error("User found but password field is missing:", user.id);
+        return res.status(500).json({
+          success: false,
+          message: "Account configuration error. Please contact support.",
+        });
+      }
+
       // Compare passwords
       const isPasswordValid = await bcrypt.compare(password, user.password);
 
@@ -339,20 +348,24 @@ class AuthController {
       // Update the token in the database
       await this.userModel.updateToken(user.id, token);
 
-      // Send success response
+      // Send success response with userType for frontend compatibility
       res.status(200).json({
         success: true,
         message: "Login successful",
+        token: token,
         user: {
           id: user.id,
           name: user.name,
           email: user.email,
-          role: user.role,
+          userType: user.role,
+          role: user.role, // Keep for backward compatibility
           token: token,
         },
       });
     } catch (error) {
       console.error("Error during login:", error);
+      console.error("Error stack:", error.stack);
+      console.error("Login request body:", { email: email ? email.substring(0, 5) + "..." : "missing" });
       res.status(500).json({
         success: false,
         message: "An error occurred during login",

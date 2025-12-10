@@ -156,16 +156,26 @@ class User {
     async findByEmail(email) {
         const client = await this.pool.connect();
         try {
-            const query = `
-                SELECT u.*, o.building_name as office_name, t.name as team_name
-                FROM users u
-                LEFT JOIN offices o ON u.office_id = o.id
-                LEFT JOIN teams t ON u.team_id = t.id
-                WHERE u.email = $1
-            `;
-            const result = await client.query(query, [email]);
-            return result.rows[0] || null;
+            // First try with JOINs for office and team info
+            try {
+                const query = `
+                    SELECT u.*, o.building_name as office_name, t.name as team_name
+                    FROM users u
+                    LEFT JOIN offices o ON u.office_id = o.id
+                    LEFT JOIN teams t ON u.team_id = t.id
+                    WHERE u.email = $1
+                `;
+                const result = await client.query(query, [email]);
+                return result.rows[0] || null;
+            } catch (joinError) {
+                // If JOINs fail (tables might not exist), fall back to simple query
+                console.warn('JOIN query failed, falling back to simple query:', joinError.message);
+                const simpleQuery = 'SELECT * FROM users WHERE email = $1';
+                const result = await client.query(simpleQuery, [email]);
+                return result.rows[0] || null;
+            }
         } catch (error) {
+            console.error('Error in findByEmail:', error);
             throw error;
         } finally {
             client.release();
