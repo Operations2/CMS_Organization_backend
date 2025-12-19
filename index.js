@@ -253,6 +253,7 @@ app.use(async (req, res, next) => {
   next();
 });
 
+
 // Setup routes with lazy controller initialization
 app.use("/api/auth", sanitizeInputs, (req, res, next) => {
   const router = createAuthRouter(getAuthController());
@@ -375,16 +376,14 @@ app.get("/test-db", async (req, res) => {
 //     res.status(500).json({ success: false, error: "Database error" });
 //   }
 // });
-
+app.get('/healthz', (req, res) => {
+  res.status(200).send('ok');
+});
 // Add 404 middleware
 app.use(notFound);
 
 // Error handling middleware
 app.use(errorHandler);
-
-app.get('/healthz', (req, res) => {
-  res.status(200).send('ok');
-});
 
 // For local development
 app.listen(port, '0.0.0.0', () => {
