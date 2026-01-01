@@ -59,8 +59,10 @@ class CustomFieldController {
             }
 
             // Validate field type
-            const validFieldTypes = ['text', 'email', 'phone', 'number','currency', 'date', 'datetime', 'textarea', 'select', 'checkbox', 'radio', 'url', 'file', 'lookup'];
+            const validFieldTypes = ['text', 'email', 'phone', 'number', 'currency', 'percentage', 'date', 'datetime', 'textarea', 'select', 'checkbox', 'radio', 'url', 'file', 'lookup'];
+            console.log('Validating field type:', fieldType, 'against valid types:', validFieldTypes);
             if (fieldType && !validFieldTypes.includes(fieldType)) {
+                console.error('Field type validation failed:', fieldType, 'not in', validFieldTypes);
                 return res.status(400).json({
                     success: false,
                     message: `Invalid field type. Must be one of: ${validFieldTypes.join(', ')}`
@@ -228,9 +230,11 @@ class CustomFieldController {
             }
 
             // 5. Validate field type if it's being updated
-            const validFieldTypes = ['text', 'email', 'phone', 'number','currency','date', 'datetime', 'textarea', 'select', 'checkbox', 'radio', 'url', 'file', 'lookup'];
+            const validFieldTypes = ['text', 'email', 'phone', 'number', 'currency', 'percentage', 'date', 'datetime', 'textarea', 'select', 'checkbox', 'radio', 'url', 'file', 'lookup'];
             if (updateData.fieldType !== undefined) {
+                console.log('Validating field type update:', updateData.fieldType, 'against valid types:', validFieldTypes);
                 if (!validFieldTypes.includes(updateData.fieldType)) {
+                    console.error('Field type validation failed:', updateData.fieldType, 'not in', validFieldTypes);
                     return res.status(400).json({
                         success: false,
                         message: `Invalid field type. Must be one of: ${validFieldTypes.join(', ')}`
