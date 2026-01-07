@@ -92,13 +92,22 @@ h INTEGER DEFAULT 0,
   ALTER TABLE template_documents
     ADD COLUMN IF NOT EXISTS file_url TEXT
 `);
+      await client.query(`
+  ALTER TABLE template_documents
+    ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE
+`);
+
+      await client.query(`
+  CREATE INDEX IF NOT EXISTS idx_template_documents_is_archived
+  ON template_documents(is_archived)
+`);
+
       return true;
     } finally {
       if (client) client.release();
     }
   }
-
-  async getAll() {
+  async getAll({ archived = false } = {}) {
     const client = await this.pool.connect();
     try {
       const q = `
@@ -106,16 +115,15 @@ h INTEGER DEFAULT 0,
         td.*, 
         u.name AS created_by_name,
         COALESCE(COUNT(m.id), 0)::int AS mapped_count
-
       FROM template_documents td
       LEFT JOIN users u ON u.id = td.created_by
-      LEFT JOIN template_document_mappings m 
-        ON m.template_document_id = td.id
+      LEFT JOIN template_document_mappings m ON m.template_document_id = td.id
       WHERE td.status = TRUE
+        AND td.is_archived = $1
       GROUP BY td.id, u.name
       ORDER BY td.created_at DESC
     `;
-      const r = await client.query(q);
+      const r = await client.query(q, [!!archived]);
       return r.rows;
     } finally {
       client.release();
@@ -154,20 +162,19 @@ h INTEGER DEFAULT 0,
   RETURNING *
 `;
 
-
-     const values = [
-       data.document_name,
-       data.category,
-       data.description || null,
-       !!data.approval_required,
-       !!data.additional_docs_required,
-       data.file_name || null,
-       data.file_path || null,
-       data.file_url || null,
-       data.file_size || null,
-       data.mime_type || null,
-       data.created_by || null,
-     ];
+      const values = [
+        data.document_name,
+        data.category,
+        data.description || null,
+        !!data.approval_required,
+        !!data.additional_docs_required,
+        data.file_name || null,
+        data.file_path || null,
+        data.file_url || null,
+        data.file_size || null,
+        data.mime_type || null,
+        data.created_by || null,
+      ];
 
       const inserted = await client.query(q, values);
       const doc = inserted.rows[0];
@@ -204,7 +211,7 @@ h INTEGER DEFAULT 0,
     try {
       await client.query("BEGIN");
 
-    const q = `
+      const q = `
   UPDATE template_documents
   SET document_name = COALESCE($1, document_name),
       category = COALESCE($2, category),
@@ -221,25 +228,23 @@ h INTEGER DEFAULT 0,
   RETURNING *
 `;
 
-
-     const r = await client.query(q, [
-       data.document_name ?? null,
-       data.category ?? null,
-       data.description ?? null,
-       typeof data.approval_required === "boolean"
-         ? data.approval_required
-         : null,
-       typeof data.additional_docs_required === "boolean"
-         ? data.additional_docs_required
-         : null,
-       data.file_name ?? null,
-       data.file_path ?? null,
-       data.file_url ?? null,
-       data.file_size ?? null,
-       data.mime_type ?? null,
-       id,
-     ]);
-
+      const r = await client.query(q, [
+        data.document_name ?? null,
+        data.category ?? null,
+        data.description ?? null,
+        typeof data.approval_required === "boolean"
+          ? data.approval_required
+          : null,
+        typeof data.additional_docs_required === "boolean"
+          ? data.additional_docs_required
+          : null,
+        data.file_name ?? null,
+        data.file_path ?? null,
+        data.file_url ?? null,
+        data.file_size ?? null,
+        data.mime_type ?? null,
+        id,
+      ]);
 
       if (Array.isArray(data.notification_user_ids)) {
         await client.query(
@@ -275,6 +280,21 @@ h INTEGER DEFAULT 0,
     try {
       const q = `UPDATE template_documents SET status = FALSE, updated_at = NOW() WHERE id = $1 RETURNING *`;
       const r = await client.query(q, [id]);
+      return r.rows[0] || null;
+    } finally {
+      client.release();
+    }
+  }
+  async setArchive(id, archive = true) {
+    const client = await this.pool.connect();
+    try {
+      const q = `
+      UPDATE template_documents
+      SET is_archived = $2, updated_at = NOW()
+      WHERE id = $1
+      RETURNING *
+    `;
+      const r = await client.query(q, [id, !!archive]);
       return r.rows[0] || null;
     } finally {
       client.release();

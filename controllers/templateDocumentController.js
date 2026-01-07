@@ -4,6 +4,7 @@ const { put } = require("@vercel/blob");
 
 class TemplateDocumentController {
   constructor(pool) {
+    this.pool = pool;
     this.model = new TemplateDocument(pool);
 
     this.getAll = this.getAll.bind(this);
@@ -15,22 +16,47 @@ class TemplateDocumentController {
     this.saveMappings = this.saveMappings.bind(this);
 
     this.getInternalUsers = this.getInternalUsers.bind(this);
+    this.archive = this.archive.bind(this);
   }
 
   async initTables() {
     await this.model.initTable();
   }
-
   async getAll(req, res) {
+    let client;
     try {
-      const documents = await this.model.getAll();
-      return res.json({ success: true, documents });
+      const archived =
+        req.query.archived === "1" ||
+        req.query.archived === "true" ||
+        req.query.archived === 1;
+
+      client = await this.model.pool.connect();
+
+      const q = `
+      SELECT 
+        td.*, 
+        u.name AS created_by_name,
+        COALESCE(COUNT(m.id), 0)::int AS mapped_count
+      FROM template_documents td
+      LEFT JOIN users u ON u.id = td.created_by
+      LEFT JOIN template_document_mappings m 
+        ON m.template_document_id = td.id
+      WHERE td.status = TRUE
+        AND td.is_archived = $1
+      GROUP BY td.id, u.name
+      ORDER BY td.created_at DESC
+    `;
+
+      const r = await client.query(q, [archived]);
+      return res.json({ success: true, documents: r.rows });
     } catch (e) {
       return res.status(500).json({
         success: false,
         message: "Failed to fetch template documents",
         error: process.env.NODE_ENV === "production" ? undefined : e.message,
       });
+    } finally {
+      if (client) client.release();
     }
   }
 
@@ -180,6 +206,28 @@ class TemplateDocumentController {
       return res.status(500).json({
         success: false,
         message: "Failed to delete template document",
+        error: process.env.NODE_ENV === "production" ? undefined : e.message,
+      });
+    }
+  }
+  async archive(req, res) {
+    try {
+      const id = req.params.id;
+      const archive = req.body?.archive !== false; // default true
+
+      const updated = await this.model.setArchive(id, archive);
+      if (!updated)
+        return res.status(404).json({ success: false, message: "Not found" });
+
+      return res.json({
+        success: true,
+        message: archive ? "Archived" : "Unarchived",
+        document: updated,
+      });
+    } catch (e) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to archive template document",
         error: process.env.NODE_ENV === "production" ? undefined : e.message,
       });
     }
