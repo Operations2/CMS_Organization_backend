@@ -73,9 +73,14 @@ const packetRoutes = require("./routes/packetRoutes");
 const jobseekerPortalAuthRoutes = require("./routes/jobseekerPortalAuthRoutes");
 const jobseekerPortalDocumentsRoutes = require("./routes/jobseekerPortalDocumentsRoutes");
 
+// Email Template
+const EmailTemplateController = require("./controllers/emailTemplateController");
+
 const { notFound, errorHandler } = require("./middleware/errorMiddleware");
 const { sanitizeInputs } = require("./middleware/validationMiddleware");
 const { verifyToken, checkRole } = require("./middleware/authMiddleware");
+const createEmailTemplateRouter = require("./routes/emailTemplateRoutes");
+
 
 // Create Express app
 const app = express();
@@ -235,6 +240,10 @@ const getTeamController = () => {
 const getOnboardingController = () => {
   return new OnboardingController(getPool());
 };
+const getEmailTemplateController = () => {
+  return new EmailTemplateController(getPool());
+};
+
 
 // Setup nodemailer with a connection pool
 // const transporter = nodemailer.createTransporter({
@@ -356,16 +365,20 @@ app.use(async (req, res, next) => {
         await onboardingController.initTables();
       }
       // Job Seeker Portal (login tables)
-    if (req.path.startsWith("/api/jobseeker-portal")) {
-  const JobseekerPortalAuthController = require("./controllers/jobseekerPortalAuthController");
-  const c = new JobseekerPortalAuthController(getPool());
-  await c.initTables();
+      if (req.path.startsWith("/api/jobseeker-portal")) {
+        const JobseekerPortalAuthController = require("./controllers/jobseekerPortalAuthController");
+        const c = new JobseekerPortalAuthController(getPool());
+        await c.initTables();
 
-  const Onboarding = require("./models/onboarding");
-  const ob = new Onboarding(getPool());
-  await ob.initTables();
-}
-
+        const Onboarding = require("./models/onboarding");
+        const ob = new Onboarding(getPool());
+        await ob.initTables();
+      }
+      // Initialize email template tables
+        if (req.path.startsWith("/api/email-templates")) {
+          const emailTemplateController = new EmailTemplateController(getPool());
+          await emailTemplateController.initTables();
+        }
     } catch (error) {
       console.error("Failed to initialize tables:", error.message);
       // Continue anyway - tables might already exist
@@ -523,7 +536,11 @@ app.use("/api/jobseeker-portal", sanitizeInputs, (req, res, next) => {
   const router = jobseekerPortalDocumentsRoutes(getPool());
   router(req, res, next);
 });
-
+//Email Template
+app.use("/api/email-templates", sanitizeInputs, (req, res, next) => {
+  const router = createEmailTemplateRouter(getPool(), getEmailTemplateController());
+  router(req, res, next);
+});
 
 
 
