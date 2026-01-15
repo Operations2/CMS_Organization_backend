@@ -133,7 +133,7 @@ class Job {
 
             // ✅ Convert custom fields for PostgreSQL JSONB (same pattern as Organizations)
             let customFieldsJson = '{}';
-            
+
             if (custom_fields) {
                 if (typeof custom_fields === 'string') {
                     // It's already a string, validate it's valid JSON
@@ -154,7 +154,7 @@ class Job {
                     }
                 }
             }
-            
+
             // Debug log
             console.log("Custom fields processing:");
             console.log("  - Received custom_fields:", custom_fields);
@@ -314,6 +314,39 @@ class Job {
             const result = await client.query(query, values);
             return result.rows[0] || null;
         } catch (error) {
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    // Get multiple jobs by IDs (for XML export)
+    async getByIds(ids, userId = null) {
+        const client = await this.pool.connect();
+        try {
+            let query = `
+                SELECT j.*, u.name as created_by_name,
+                o.name as organization_name
+                FROM jobs j
+                LEFT JOIN users u ON j.created_by = u.id
+                LEFT JOIN organizations o ON j.organization_id = o.id
+                WHERE j.id = ANY($1)
+            `;
+
+            const values = [ids];
+
+            // If userId is provided, filter by user
+            if (userId) {
+                query += ` AND j.created_by = $2`;
+                values.push(userId);
+            }
+
+            query += ` ORDER BY j.id DESC`;
+
+            const result = await client.query(query, values);
+            return result.rows;
+        } catch (error) {
+            console.error('Error getting jobs by IDs:', error);
             throw error;
         } finally {
             client.release();

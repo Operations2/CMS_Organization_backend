@@ -12,6 +12,7 @@ class JobController {
         this.addNote = this.addNote.bind(this);
         this.getNotes = this.getNotes.bind(this);
         this.getHistory = this.getHistory.bind(this);
+        this.exportToXML = this.exportToXML.bind(this);
     }
 
     // Initialize database tables
@@ -61,7 +62,7 @@ class JobController {
         try {
             // Get the current user's ID from the auth middleware
             const userId = req.user.id;
-            
+
 
             // ✅ Build model data with custom_fields (same pattern as Organizations)
             const modelData = {
@@ -373,6 +374,161 @@ class JobController {
                 error: process.env.NODE_ENV === 'production' ? undefined : error.message
             });
         }
+    }
+
+    // Export jobs to XML
+    async exportToXML(req, res) {
+        try {
+            const { ids } = req.query; // Comma-separated job IDs
+            const userId = req.user.id;
+            const userRole = req.user.role;
+
+            // Parse job IDs
+            const jobIds = ids ? ids.split(',').map(id => id.trim()) : [];
+
+            if (jobIds.length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'No job IDs provided'
+                });
+            }
+
+            console.log(`Exporting ${jobIds.length} jobs to XML for user ${userId} (${userRole})`);
+
+            // Fetch jobs
+            const jobs = await this.jobModel.getByIds(
+                jobIds,
+                ['admin', 'owner'].includes(userRole) ? null : userId
+            );
+
+            if (jobs.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'No jobs found or you do not have permission to export them'
+                });
+            }
+
+            console.log(`Found ${jobs.length} jobs to export`);
+
+            // Generate XML
+            const xml = this.generateJobXML(jobs);
+
+            // Set headers for XML download
+            res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="jobs_export_${Date.now()}.xml"`);
+            res.status(200).send(xml);
+        } catch (error) {
+            console.error('Error exporting jobs to XML:', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while exporting jobs',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+
+    // Helper method to generate XML from jobs
+    generateJobXML(jobs) {
+        let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+        xml += '<jobs>\n';
+
+        jobs.forEach(job => {
+            xml += '  <job>\n';
+
+            // Basic Information
+            xml += '    <!-- Basic Information -->\n';
+            xml += `    <id>${this.escapeXML(job.id)}</id>\n`;
+            xml += `    <title>${this.escapeXML(job.job_title)}</title>\n`;
+            xml += `    <category>${this.escapeXML(job.category)}</category>\n`;
+            xml += `    <status>${this.escapeXML(job.status)}</status>\n`;
+            xml += `    <priority>${this.escapeXML(job.priority)}</priority>\n`;
+            xml += `    <employmentType>${this.escapeXML(job.employment_type)}</employmentType>\n`;
+
+            // Organization & People
+            xml += '    <!-- Organization & People -->\n';
+            xml += `    <organization>${this.escapeXML(job.organization_name)}</organization>\n`;
+            xml += `    <organizationId>${this.escapeXML(job.organization_id)}</organizationId>\n`;
+            xml += `    <hiringManager>${this.escapeXML(job.hiring_manager)}</hiringManager>\n`;
+            xml += `    <owner>${this.escapeXML(job.owner)}</owner>\n`;
+            xml += `    <createdBy>${this.escapeXML(job.created_by_name)}</createdBy>\n`;
+
+            // Location & Remote
+            xml += '    <!-- Location & Remote -->\n';
+            xml += `    <location>${this.escapeXML(job.worksite_location)}</location>\n`;
+            xml += `    <remoteOption>${this.escapeXML(job.remote_option)}</remoteOption>\n`;
+
+            // Compensation
+            xml += '    <!-- Compensation -->\n';
+            xml += `    <salaryType>${this.escapeXML(job.salary_type)}</salaryType>\n`;
+            xml += `    <minSalary>${this.escapeXML(job.min_salary)}</minSalary>\n`;
+            xml += `    <maxSalary>${this.escapeXML(job.max_salary)}</maxSalary>\n`;
+            xml += `    <benefits>${this.escapeXML(job.benefits)}</benefits>\n`;
+
+            // Job Details
+            xml += '    <!-- Job Details -->\n';
+            xml += `    <description>${this.escapeXML(job.job_description)}</description>\n`;
+            xml += `    <requiredSkills>${this.escapeXML(job.required_skills)}</requiredSkills>\n`;
+            xml += `    <startDate>${this.escapeXML(job.start_date)}</startDate>\n`;
+
+            // Job Board
+            xml += '    <!-- Job Board -->\n';
+            xml += `    <jobBoardStatus>${this.escapeXML(job.job_board_status)}</jobBoardStatus>\n`;
+
+            // Dates
+            xml += '    <!-- Dates -->\n';
+            xml += `    <dateAdded>${this.escapeXML(job.date_added)}</dateAdded>\n`;
+            xml += `    <createdAt>${this.escapeXML(job.created_at)}</createdAt>\n`;
+            xml += `    <updatedAt>${this.escapeXML(job.updated_at)}</updatedAt>\n`;
+
+            // Include custom fields if present (excluding duplicates of main fields)
+            if (job.custom_fields) {
+                const customFields = typeof job.custom_fields === 'string'
+                    ? JSON.parse(job.custom_fields)
+                    : job.custom_fields;
+
+                // List of main field names to exclude from custom fields
+                const mainFields = [
+                    'job title', 'title', 'category', 'status', 'priority',
+                    'employment type', 'organization', 'hiring manager', 'owner',
+                    'location', 'worksite location', 'remote option', 'salary type',
+                    'min salary', 'max salary', 'benefits', 'description',
+                    'job description', 'required skills', 'start date',
+                    'job board status', 'date added', 'created at', 'updated at'
+                ];
+
+                // Filter out custom fields that duplicate main fields
+                const filteredCustomFields = Object.entries(customFields).filter(([key]) => {
+                    const normalizedKey = key.toLowerCase().trim();
+                    return !mainFields.includes(normalizedKey);
+                });
+
+                if (filteredCustomFields.length > 0) {
+                    xml += '    <!-- Custom Fields -->\n';
+                    xml += '    <customFields>\n';
+                    filteredCustomFields.forEach(([key, value]) => {
+                        xml += `      <field name="${this.escapeXML(key)}">${this.escapeXML(value)}</field>\n`;
+                    });
+                    xml += '    </customFields>\n';
+                }
+            }
+
+            xml += '  </job>\n';
+        });
+
+        xml += '</jobs>';
+        return xml;
+    }
+
+    // Helper to escape XML special characters
+    escapeXML(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&apos;');
     }
 }
 

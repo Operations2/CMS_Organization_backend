@@ -12,6 +12,9 @@ function createJobRouter(jobController, authMiddleware) {
     // (admins see all, regular users see only their own)
     router.get('/', jobController.getAll);
 
+    // Export jobs to XML (must be before /:id route)
+    router.get('/export/xml', jobController.exportToXML);
+
     // Get job by ID 
     // (admins can see any, regular users only their own)
     router.get('/:id', jobController.getById);
