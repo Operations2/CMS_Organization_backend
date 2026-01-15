@@ -593,12 +593,11 @@ app.use(notFound);
 // Error handling middleware
 app.use(errorHandler);
 
-// For local development
-if (process.env.NODE_ENV !== "production") {
-  app.listen(port, () => {
-    console.log(`Server running on port ${port}`);
+// Start server when run directly (EC2/systemd)
+if (require.main === module) {
+  app.listen(port, "0.0.0.0", () => {
+    console.log(`✅ Server running on port ${port} (${process.env.NODE_ENV})`);
   });
 }
 
-// Export for serverless
 module.exports = app;
