@@ -93,36 +93,39 @@ app.use(helmet());
 app.use(compression());
 
 // Enable CORS with specific options
-const allowedOrigins = [
-  'http://localhost:3000',  // Local development
-  'https://ats-orcin.vercel.app',  // Production frontend
-  'https://ats-software-frontend.vercel.app',  // Alternative production frontend
-  'https://cms-organization.vercel.app',
-  'https://cmsorganization.vercel.app'  // Current frontend domain
+const defaultDevOrigins = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
 ];
 
-// Use environment variable for additional origins if needed
-const additionalOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(",")
-  : [];
+const envOrigins = (process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map(s => s.trim())
+  .filter(Boolean);
+const allOrigins = [...defaultDevOrigins, ...envOrigins];
+// CORS configuration
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // allow non-browser tools (curl/postman) that send no Origin
+      if (!origin) return callback(null, true);
 
-const allOrigins = [...allowedOrigins, ...additionalOrigins];
+      // In production, only allow env-driven origins.
+      // In non-prod, allow localhost + env-driven.
+      if (process.env.NODE_ENV === "production") {
+        return allOrigins.includes(origin)
+          ? callback(null, true)
+          : callback(new Error(`CORS blocked for origin: ${origin}`));
+      }
 
-// CORS configuration with error handling
-try {
-  app.use(
-    cors({
-      origin: process.env.NODE_ENV === "production" ? allOrigins : true,
-      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-      credentials: true,
-    })
-  );
-} catch (error) {
-  console.error("CORS configuration error:", error);
-  // Fallback to basic CORS
-  app.use(cors());
-}
+      // dev: be permissive for speed, but still allowlist if you prefer
+      return callback(null, true);
+    },
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+    credentials: true,
+  })
+);
 
 // Parse request bodies with increased limits
 app.use(bodyParser.json({ limit: "1mb" }));
