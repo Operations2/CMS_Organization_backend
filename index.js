@@ -586,6 +586,9 @@ app.get("/test-db", async (req, res) => {
 //     res.status(500).json({ success: false, error: "Database error" });
 //   }
 // });
+app.get("/healthz", (req, res) => {
+  res.status(200).send("ok");
+});
 
 // Add 404 middleware
 app.use(notFound);
@@ -593,12 +596,11 @@ app.use(notFound);
 // Error handling middleware
 app.use(errorHandler);
 
-// For local development
-if (process.env.NODE_ENV !== "production") {
-  app.listen(port, () => {
-    console.log(`Server running on port ${port}`);
+// Start server when run directly (EC2/systemd)
+if (require.main === module) {
+  app.listen(port, "0.0.0.0", () => {
+    console.log(`✅ Server running on port ${port} (${process.env.NODE_ENV})`);
   });
 }
 
-// Export for serverless
 module.exports = app;
