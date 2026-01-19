@@ -26,6 +26,7 @@ class OrganizationController {
         this.addDocument = this.addDocument.bind(this);
         this.updateDocument = this.updateDocument.bind(this);
         this.deleteDocument = this.deleteDocument.bind(this);
+        this.getSummaryCounts = this.getSummaryCounts.bind(this);
     }
 
 
@@ -365,20 +366,33 @@ class OrganizationController {
     async addNote(req, res) {
         try {
             const { id } = req.params;
-            const { text } = req.body;
+            const { text, action, about_references, aboutReferences } = req.body;
 
+            // Validate required fields
             if (!text || !text.trim()) {
                 return res.status(400).json({
                     success: false,
-                    message: 'Note text is required'
+                    message: 'Note text is required',
+                    errors: { text: 'Note text is required' }
+                });
+            }
+
+            if (!action || !action.trim()) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Action is required',
+                    errors: { action: 'Action is required' }
                 });
             }
 
             // Get the current user's ID
             const userId = req.user.id;
 
+            // Use about_references or aboutReferences (handle both naming conventions)
+            const finalAboutReferences = about_references || aboutReferences;
+
             // Add the note
-            const note = await this.organizationModel.addNote(id, text, userId);
+            const note = await this.organizationModel.addNote(id, text, userId, action, finalAboutReferences);
 
             return res.status(201).json({
                 success: true,
@@ -552,7 +566,7 @@ class OrganizationController {
     async addDocument(req, res) {
         try {
             const { id } = req.params;
-            const { document_name, document_type, content } = req.body;
+            const { document_name, document_type, content, file_path, file_size, mime_type } = req.body;
 
             if (!document_name) {
                 return res.status(400).json({
@@ -570,7 +584,10 @@ class OrganizationController {
                 entity_id: id,
                 document_name,
                 document_type: document_type || 'General',
-                content,
+                content: content || null,
+                file_path: file_path || null,
+                file_size: file_size || null,
+                mime_type: mime_type || 'text/plain',
                 created_by: userId
             });
 
@@ -642,6 +659,110 @@ class OrganizationController {
             res.status(500).json({
                 success: false,
                 message: 'An error occurred while deleting the document',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    // Get organization summary counts
+    async getSummaryCounts(req, res) {
+        try {
+            const { id } = req.params;
+            const client = await this.pool.connect();
+
+            try {
+                // Count Client Visits (notes with action "Client Visit" or text containing "client visit")
+                const clientVisitsQuery = `
+                    SELECT COUNT(*) as count
+                    FROM organization_notes
+                    WHERE organization_id = $1 
+                    AND (
+                        action = 'Client Visit' 
+                        OR LOWER(COALESCE(action, '')) LIKE '%client visit%'
+                        OR LOWER(text) LIKE '%client visit%'
+                    )
+                `;
+                const clientVisitsResult = await client.query(clientVisitsQuery, [id]);
+                const clientVisits = parseInt(clientVisitsResult.rows[0]?.count || 0);
+
+                // Count Jobs
+                const jobsQuery = `
+                    SELECT COUNT(*) as count
+                    FROM jobs
+                    WHERE organization_id = $1
+                `;
+                const jobsResult = await client.query(jobsQuery, [id]);
+                const jobs = parseInt(jobsResult.rows[0]?.count || 0);
+
+                // Count Submissions (notes with action containing "Submission" or text containing "submission")
+                const submissionsQuery = `
+                    SELECT COUNT(*) as count
+                    FROM organization_notes
+                    WHERE organization_id = $1 
+                    AND (
+                        LOWER(COALESCE(action, '')) LIKE '%submission%'
+                        OR LOWER(text) LIKE '%submission%'
+                    )
+                    AND LOWER(COALESCE(action, '')) NOT LIKE '%client submission%'
+                `;
+                const submissionsResult = await client.query(submissionsQuery, [id]);
+                const submissions = parseInt(submissionsResult.rows[0]?.count || 0);
+
+                // Count Client Submissions (notes with action containing "Client Submission")
+                const clientSubmissionsQuery = `
+                    SELECT COUNT(*) as count
+                    FROM organization_notes
+                    WHERE organization_id = $1 
+                    AND (
+                        LOWER(COALESCE(action, '')) LIKE '%client submission%'
+                        OR LOWER(text) LIKE '%client submission%'
+                    )
+                `;
+                const clientSubmissionsResult = await client.query(clientSubmissionsQuery, [id]);
+                const clientSubmissions = parseInt(clientSubmissionsResult.rows[0]?.count || 0);
+
+                // Count Interviews (notes with action containing "Interview" or text containing "interview")
+                const interviewsQuery = `
+                    SELECT COUNT(*) as count
+                    FROM organization_notes
+                    WHERE organization_id = $1 
+                    AND (
+                        LOWER(COALESCE(action, '')) LIKE '%interview%'
+                        OR LOWER(text) LIKE '%interview%'
+                    )
+                `;
+                const interviewsResult = await client.query(interviewsQuery, [id]);
+                const interviews = parseInt(interviewsResult.rows[0]?.count || 0);
+
+                // Count Placements (through jobs)
+                const placementsQuery = `
+                    SELECT COUNT(DISTINCT p.id) as count
+                    FROM placements p
+                    INNER JOIN jobs j ON p.job_id = j.id
+                    WHERE j.organization_id = $1
+                `;
+                const placementsResult = await client.query(placementsQuery, [id]);
+                const placements = parseInt(placementsResult.rows[0]?.count || 0);
+
+                return res.status(200).json({
+                    success: true,
+                    counts: {
+                        clientVisits,
+                        jobs,
+                        submissions,
+                        clientSubmissions,
+                        interviews,
+                        placements
+                    }
+                });
+            } finally {
+                client.release();
+            }
+        } catch (error) {
+            console.error('Error fetching summary counts:', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while fetching summary counts',
                 error: process.env.NODE_ENV === 'production' ? undefined : error.message
             });
         }

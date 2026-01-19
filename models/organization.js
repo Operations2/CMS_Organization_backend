@@ -41,6 +41,7 @@ class Organization {
                     created_by INTEGER REFERENCES users(id),
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    archived_at TIMESTAMP,
                     contact_phone VARCHAR(50),
                     address TEXT,
                     address2 VARCHAR(255),
@@ -51,15 +52,49 @@ class Organization {
                 )
             `);
 
+            // Add archived_at column if it doesn't exist (for existing tables)
+            await client.query(`
+                DO $$ 
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='organizations' AND column_name='archived_at'
+                    ) THEN
+                        ALTER TABLE organizations ADD COLUMN archived_at TIMESTAMP;
+                    END IF;
+                END $$;
+            `);
+
             // Also create a table for organization notes if it doesn't exist
             await client.query(`
                 CREATE TABLE IF NOT EXISTS organization_notes (
                     id SERIAL PRIMARY KEY,
                     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
                     text TEXT NOT NULL,
+                    action VARCHAR(255),
+                    about_references JSONB,
                     created_by INTEGER REFERENCES users(id),
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
+            `);
+
+            // Add action and about_references columns if they don't exist (for existing tables)
+            await client.query(`
+                DO $$ 
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='organization_notes' AND column_name='action'
+                    ) THEN
+                        ALTER TABLE organization_notes ADD COLUMN action VARCHAR(255);
+                    END IF;
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='organization_notes' AND column_name='about_references'
+                    ) THEN
+                        ALTER TABLE organization_notes ADD COLUMN about_references JSONB;
+                    END IF;
+                END $$;
             `);
 
             // Create a table for organization history
@@ -557,19 +592,44 @@ class Organization {
     }
 
     // Add a note to an organization
-    async addNote(organizationId, text, userId) {
+    async addNote(organizationId, text, userId, action = null, aboutReferences = null) {
         const client = await this.pool.connect();
         try {
             await client.query('BEGIN');
 
+            // Handle about_references - convert to JSONB if it's an array/object
+            let aboutReferencesJson = null;
+            if (aboutReferences) {
+                if (typeof aboutReferences === 'string') {
+                    try {
+                        // Try to parse if it's a JSON string
+                        const parsed = JSON.parse(aboutReferences);
+                        aboutReferencesJson = Array.isArray(parsed) ? parsed : [parsed];
+                    } catch (e) {
+                        // If parsing fails, treat as plain string
+                        aboutReferencesJson = aboutReferences;
+                    }
+                } else if (Array.isArray(aboutReferences)) {
+                    aboutReferencesJson = aboutReferences;
+                } else if (typeof aboutReferences === 'object') {
+                    aboutReferencesJson = [aboutReferences];
+                }
+            }
+
             // Insert the note
             const noteQuery = `
-                INSERT INTO organization_notes (organization_id, text, created_by)
-                VALUES ($1, $2, $3)
-                RETURNING id, text, created_at
+                INSERT INTO organization_notes (organization_id, text, action, about_references, created_by)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING *
             `;
 
-            const noteResult = await client.query(noteQuery, [organizationId, text, userId]);
+            const noteResult = await client.query(noteQuery, [
+                organizationId, 
+                text, 
+                action, 
+                aboutReferencesJson ? JSON.stringify(aboutReferencesJson) : null,
+                userId
+            ]);
 
             // Add history entry for the note
             const historyQuery = `
@@ -614,7 +674,17 @@ class Organization {
             `;
 
             const result = await client.query(query, [organizationId]);
-            return result.rows;
+            // Parse about_references JSONB to object/array
+            return result.rows.map((row) => {
+                if (row.about_references && typeof row.about_references === 'string') {
+                    try {
+                        row.about_references = JSON.parse(row.about_references);
+                    } catch (e) {
+                        // If parsing fails, keep as is
+                    }
+                }
+                return row;
+            });
         } catch (error) {
             throw error;
         } finally {
