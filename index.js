@@ -35,6 +35,8 @@ const TaskController = require("./controllers/taskController");
 const PlacementController = require("./controllers/placementController");
 const TearsheetController = require("./controllers/tearsheetController");
 const AdminDocumentController = require("./controllers/adminDocumentController");
+const TransferController = require("./controllers/transferController");
+const DeleteRequestController = require("./controllers/deleteRequestController");
 const SharedDocumentController = require("./controllers/sharedDocumentController");
 const BroadcastMessageController = require("./controllers/broadcastMessageController");
 const HeaderConfigController = require("./controllers/headerConfigController");
@@ -47,7 +49,7 @@ const OnboardingController = require("./controllers/onboardingController");
 const createOnboardingRouter = require("./routes/onboardingRoutes");
 
 const createAuthRouter = require("./routes/authRoutes");
-const createOrganizationRouter = require("./routes/organizationRoutes");
+const { createOrganizationRouter, createTransferRouter, createDeleteRequestRouter } = require("./routes/organizationRoutes");
 const createJobRouter = require("./routes/jobRoutes");
 const createJobSeekerRouter = require("./routes/jobSeekerRoutes");
 const createHiringManagerRouter = require("./routes/hiringManagerRoutes");
@@ -181,6 +183,14 @@ const getHiringManagerController = () => {
 
 const getOrganizationController = () => {
   return new OrganizationController(getPool());
+};
+
+const getTransferController = () => {
+  return new TransferController(getPool());
+};
+
+const getDeleteRequestController = () => {
+  return new DeleteRequestController(getPool());
 };
 
 const getJobController = () => {
@@ -330,6 +340,18 @@ app.use(async (req, res, next) => {
         await tearsheetController.initTables();
       }
 
+      // Initialize transfer tables
+      if (req.path.startsWith("/api/organizations/transfer")) {
+        const transferController = getTransferController();
+        await transferController.initTables();
+      }
+
+      // Initialize delete request tables
+      if (req.path.includes("/delete-request") || req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
+        const deleteRequestController = getDeleteRequestController();
+        await deleteRequestController.initTables();
+      }
+
       // Initialize admin document tables
       if (req.path.startsWith("/api/admin/documents")) {
         const adminDocumentController = getAdminDocumentController();
@@ -402,11 +424,37 @@ app.use("/api/users", sanitizeInputs, (req, res, next) => {
   router(req, res, next);
 });
 
+// Setup delete request routes FIRST (before organization routes to avoid conflicts)
+app.use("/api/organizations", sanitizeInputs, (req, res, next) => {
+  // Handle delete request routes first
+  if (req.path.includes("/delete-request") || req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
+    const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
+    const router = createDeleteRequestRouter(
+      getDeleteRequestController(),
+      authMiddleware
+    );
+    router(req, res, next);
+  } else {
+    // Pass to next middleware (organization routes)
+    next();
+  }
+});
+
 // Setup organization routes with authentication
 app.use("/api/organizations", sanitizeInputs, (req, res, next) => {
   const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
   const router = createOrganizationRouter(
     getOrganizationController(),
+    authMiddleware
+  );
+  router(req, res, next);
+});
+
+// Setup transfer routes with authentication
+app.use("/api/organizations/transfer", sanitizeInputs, (req, res, next) => {
+  const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
+  const router = createTransferRouter(
+    getTransferController(),
     authMiddleware
   );
   router(req, res, next);
@@ -603,4 +651,21 @@ if (require.main === module) {
   });
 }
 
+// Optional scheduled cleanup job (safe-guarded)
+try {
+  const cron = require("node-cron");
+  const { runArchiveCleanup } = require("./jobs/archiveCleanup");
+
+  if (process.env.ENABLE_CRON === "true") {
+    cron.schedule("0 2 * * *", async () => {
+      console.log("Running scheduled archive cleanup job...");
+      await runArchiveCleanup(getPool());
+    });
+    console.log("Archive cleanup scheduler enabled");
+  }
+} catch {
+  // silently ignore if node-cron not installed
+}
+
 module.exports = app;
+

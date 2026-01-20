@@ -41,7 +41,53 @@ function createOrganizationRouter(organizationController, authMiddleware) {
     router.put('/:id/documents/:documentId', organizationController.updateDocument);
     router.delete('/:id/documents/:documentId', organizationController.deleteDocument);
 
+    // Summary counts route
+    router.get('/:id/summary-counts', organizationController.getSummaryCounts);
+
     return router;
 }
 
-module.exports = createOrganizationRouter;
+// Transfer routes - separate router
+function createTransferRouter(transferController, authMiddleware) {
+    const router = express.Router();
+    const { verifyToken } = authMiddleware;
+
+    // All routes require authentication
+    router.use(verifyToken);
+
+    // Create transfer request
+    router.post('/', transferController.create);
+
+    // Approve transfer
+    router.post('/:id/approve', transferController.approve);
+
+    // Deny transfer
+    router.post('/:id/deny', transferController.deny);
+
+    return router;
+}
+
+// Delete request routes - separate router
+function createDeleteRequestRouter(deleteRequestController, authMiddleware) {
+    const router = express.Router();
+    const { verifyToken } = authMiddleware;
+
+    // All routes require authentication
+    router.use(verifyToken);
+
+    // Get delete request for a record
+    router.get('/:id/delete-request', deleteRequestController.getByRecord);
+
+    // Create delete request
+    router.post('/:id/delete-request', deleteRequestController.create);
+
+    // Approve delete request (must come before /:id routes)
+    router.post('/delete/:id/approve', deleteRequestController.approve);
+
+    // Deny delete request (must come before /:id routes)
+    router.post('/delete/:id/deny', deleteRequestController.deny);
+
+    return router;
+}
+
+module.exports = { createOrganizationRouter, createTransferRouter, createDeleteRequestRouter };

@@ -6,6 +6,7 @@ class TearsheetController {
     this.tearsheetModel = new Tearsheet(pool);
     this.create = this.create.bind(this);
     this.getAll = this.getAll.bind(this);
+    this.getRecords = this.getRecords.bind(this);
   }
 
   async initTables() {
@@ -73,6 +74,43 @@ class TearsheetController {
       return res.status(500).json({
         success: false,
         message: "Failed to create tearsheet",
+        error: process.env.NODE_ENV === "production" ? undefined : error.message,
+      });
+    }
+  }
+
+  async getRecords(req, res) {
+    try {
+      const { id } = req.params;
+      const { type } = req.query;
+
+      if (!id || !type) {
+        return res.status(400).json({
+          success: false,
+          message: "Tearsheet ID and type are required",
+        });
+      }
+
+      const validTypes = ['job_seekers', 'hiring_managers', 'jobs', 'leads'];
+      if (!validTypes.includes(type)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid type. Must be one of: job_seekers, hiring_managers, jobs, leads",
+        });
+      }
+
+      const records = await this.tearsheetModel.getRecordsByType(parseInt(id), type);
+
+      return res.json({
+        success: true,
+        records,
+        count: records.length
+      });
+    } catch (error) {
+      console.error("Error fetching tearsheet records:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch tearsheet records",
         error: process.env.NODE_ENV === "production" ? undefined : error.message,
       });
     }
